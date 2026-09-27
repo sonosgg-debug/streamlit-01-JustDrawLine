@@ -93,11 +93,15 @@ st.markdown("""
     }
     .metric-card {
         background-color: #202124; /* 검정색 계열의 배경 적용 */
-        color: #F1F3F4; /* 폰트를 밝은 색상으로 강제 지정 */
+        color: #CBD5E1; /* 눈 피로도 완화를 위한 부드러운 텍스트 색상 */
         padding: 15px;
         border-radius: 8px;
         border-left: 5px solid #8AB4F8; /* 하늘색 테두리 포인트 */
         margin-bottom: 10px;
+    }
+    .metric-card ul, .metric-card li {
+        font-size: 0.9rem;
+        line-height: 1.5;
     }
     /* 안내문(Alert) 박스 스타일: 폰트 및 이모지 아이콘 크기 축소 */
     .stAlert {
@@ -841,7 +845,7 @@ if st.session_state.screened_df is not None:
                 # 추가 설명 카드
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div style="font-size: 1.00rem; font-weight: 600; color: #E2E8F0; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                    <div style="font-size: 1.00rem; font-weight: 600; color: #CBD5E1; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
                         <span>💡</span> {selected_stock_name} 상세 분석 정보
                     </div>
                     <ul>
