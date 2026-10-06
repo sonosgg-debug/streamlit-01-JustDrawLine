@@ -1,5 +1,3 @@
-import socket
-socket.setdefaulttimeout(15.0)
 
 import streamlit as st
 import pandas as pd
@@ -48,7 +46,6 @@ STANDARD_CHART_THEME = {
     'hover_bg': 'rgba(15, 23, 42, 0.9)',
     'hover_border': '#334155'
 }
-
 
 def fmt_curr(val, ticker):
     if ticker.endswith('.KS') or ticker.endswith('.KQ'):
@@ -277,10 +274,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
 st.markdown('<div class="main-title">David Ryan "Just Draw the Line" 스크리너</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">한국 및 미국 주식시장의 종목 중 추세 돌파 및 거래량 동반 종목 발굴 프로그램</div>', unsafe_allow_html=True)
-
 
 # 기법 소개
 with st.expander("ℹ️ 데이비드 라이언의 'Just Draw the Line' 투자 기법이란?"):
@@ -492,7 +487,6 @@ if start_screening:
             
         st.session_state.last_run_time = datetime.datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
         st.session_state.market_type_used = market_choice
-
 
 # 결과 디스플레이
 if st.session_state.screened_df is not None:
