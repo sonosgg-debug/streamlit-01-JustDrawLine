@@ -46,7 +46,7 @@ def fit_upper_trendline(high_prices):
         return None, None, None
 
 
-def screen_single_stock(ticker, name, df, lookback_period=40, vol_ratio_thresh=1.5, apply_trend_template=True, breakout_window=2):
+def screen_single_stock(ticker, name, df, lookback_period=40, vol_ratio_thresh=1.5, apply_trend_template=True, breakout_window=2, **kwargs):
     """
     개별 주식 데이터프레임을 받아 데이비드 라이언 스크리닝 조건을 검증합니다.
     """
@@ -162,7 +162,8 @@ def _process_single_stock(
     vol_ratio_thresh: float,
     apply_trend_template: bool,
     breakout_window: int,
-    df_cached: pd.DataFrame = None
+    df_cached: pd.DataFrame = None,
+    **kwargs
 ):
     """
     단일 종목의 데이터를 수집하고 데이비드 라이언 상단 추세선 돌파 스크리닝을 수행하는 통합 워커 함수.
@@ -213,7 +214,8 @@ def run_screening_task(
     apply_trend_template: bool = True,
     breakout_window: int = 3,
     max_workers: int = 24,
-    progress_callback = None
+    progress_callback = None,
+    **kwargs
 ) -> pd.DataFrame:
     """
     App-20 초고속 멀티스레딩 엔진 방식을 적용하여
@@ -328,7 +330,7 @@ def run_screening_task(
     return df_res
 
 
-def run_screener(tickers_df, lookback_period=40, vol_ratio_thresh=1.5, chunk_size=50, max_workers=24):
+def run_screener(tickers_df, lookback_period=40, vol_ratio_thresh=1.5, chunk_size=50, max_workers=24, **kwargs):
     """하위 호환성을 위한 래퍼 함수"""
     return run_screening_task(
         tickers_df=tickers_df,
@@ -336,5 +338,6 @@ def run_screener(tickers_df, lookback_period=40, vol_ratio_thresh=1.5, chunk_siz
         vol_ratio_thresh=vol_ratio_thresh,
         apply_trend_template=True,
         breakout_window=3,
-        max_workers=max_workers
+        max_workers=max_workers,
+        **kwargs
     )
