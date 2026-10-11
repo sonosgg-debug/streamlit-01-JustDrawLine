@@ -489,7 +489,7 @@ if start_screening:
 
         if df_screened is not None and not df_screened.empty:
             df_final = df_screened.copy()
-            # 소속 및 시가총액 안전 보강
+            # 시장 및 시가총액 안전 보강
             if 'market' not in df_final.columns and '시장' in tickers_df.columns:
                 m_map = dict(zip(tickers_df['ticker'], tickers_df['시장']))
                 df_final['market'] = df_final['ticker'].map(m_map).fillna('KOSPI')
@@ -506,8 +506,8 @@ if start_screening:
             
             df_final_display = df_final_display.rename(columns={
                 'name': '종목명',
-                'market': '소속',
-                'marcap': '시가총액',
+                'market': '시장',
+                'marcap': '시가총액(억)',
                 'price': '현재가',
                 'ma50': '50일 MA',
                 'ma150': '150일 MA',
@@ -519,7 +519,7 @@ if start_screening:
             })
             
             desired_cols = [
-                '코드/티커', '종목명', '소속', '시가총액',
+                '코드/티커', '종목명', '시장', '시가총액(억)',
                 '현재가', '50일 MA', '150일 MA', '200일 MA',
                 '52주 최고가', '52주 최저가', '거래량 비율', '돌파 감지일'
             ]
@@ -548,8 +548,8 @@ if st.session_state.screened_df is not None:
             df_excel['코드/티커'] = df_excel['ticker'].apply(clean_ticker_code)
             df_excel = df_excel.rename(columns={
                 'name': '종목명',
-                'market': '소속',
-                'marcap': '시가총액',
+                'market': '시장',
+                'marcap': '시가총액(억)',
                 'price': '현재가',
                 'ma50': '50일 MA',
                 'ma150': '150일 MA',
@@ -561,7 +561,7 @@ if st.session_state.screened_df is not None:
             })
             
             excel_cols = [
-                '코드/티커', '종목명', '소속', '시가총액',
+                '코드/티커', '종목명', '시장', '시가총액(억)',
                 '현재가', '50일 MA', '150일 MA', '200일 MA',
                 '52주 최고가', '52주 최저가', '거래량 비율', '돌파 감지일'
             ]
@@ -569,7 +569,7 @@ if st.session_state.screened_df is not None:
             
             # 한국/미국 주식 구분에 따른 소수점 라운딩 및 형변환
             def format_excel_data(row):
-                mkt = str(row.get('소속', '')).strip()
+                mkt = str(row.get('시장', '')).strip()
                 code_str = str(row.get('코드/티커', '')).strip()
                 is_kr = mkt in ['KOSPI', 'KOSDAQ'] or code_str.isdigit()
                 
@@ -588,9 +588,9 @@ if st.session_state.screened_df is not None:
                             # 미국 주식은 소수점 둘째 자리까지 반올림
                             row[col] = round(row[col], 2)
                             
-                # 시가총액 (한국 주식: 억원 단위 정수)
-                if '시가총액' in row and pd.notna(row['시가총액']):
-                    row['시가총액'] = int(round(row['시가총액']))
+                # 시가총액(억) (한국 주식: 억원 단위 정수)
+                if '시가총액(억)' in row and pd.notna(row['시가총액(억)']):
+                    row['시가총액(억)'] = int(round(row['시가총액(억)']))
                 
                 # 거래량 비율은 공통 소수점 둘째 자리 반올림
                 if '거래량 비율' in row and pd.notna(row['거래량 비율']):
@@ -632,13 +632,13 @@ if st.session_state.screened_df is not None:
                 cell_a.number_format = '@' # 텍스트 형식 강제 적용 (000000 6자리 보존)
                 cell_a.alignment = Alignment(horizontal='center')
                 
-                # C열(3번째 열: 소속)
+                # C열(3번째 열: 시장)
                 cell_c = worksheet.cell(row=row_idx, column=3)
                 cell_c.alignment = Alignment(horizontal='center')
                 mkt_val = str(cell_c.value or '').strip()
                 is_kr = mkt_val in ['KOSPI', 'KOSDAQ'] or str(cell_a.value or '').isdigit()
                 
-                # D열(4번째 열: 시가총액)
+                # D열(4번째 열: 시가총액(억))
                 cell_d = worksheet.cell(row=row_idx, column=4)
                 cell_d.number_format = '#,##0'
                 
@@ -714,12 +714,12 @@ if st.session_state.screened_df is not None:
         # 소수점 포맷팅
         df_format = st.session_state.screened_df.copy()
         
-        df_format['현재가'] = df_format.apply(lambda r: fmt_curr(r['현재가'], r['소속']), axis=1)
-        df_format['50일 MA'] = df_format.apply(lambda r: fmt_curr(r['50일 MA'], r['소속']), axis=1)
-        df_format['150일 MA'] = df_format.apply(lambda r: fmt_curr(r['150일 MA'], r['소속']), axis=1)
-        df_format['200일 MA'] = df_format.apply(lambda r: fmt_curr(r['200일 MA'], r['소속']), axis=1)
-        df_format['52주 최고가'] = df_format.apply(lambda r: fmt_curr(r['52주 최고가'], r['소속']), axis=1)
-        df_format['52주 최저가'] = df_format.apply(lambda r: fmt_curr(r['52주 최저가'], r['소속']), axis=1)
+        df_format['현재가'] = df_format.apply(lambda r: fmt_curr(r['현재가'], r['시장']), axis=1)
+        df_format['50일 MA'] = df_format.apply(lambda r: fmt_curr(r['50일 MA'], r['시장']), axis=1)
+        df_format['150일 MA'] = df_format.apply(lambda r: fmt_curr(r['150일 MA'], r['시장']), axis=1)
+        df_format['200일 MA'] = df_format.apply(lambda r: fmt_curr(r['200일 MA'], r['시장']), axis=1)
+        df_format['52주 최고가'] = df_format.apply(lambda r: fmt_curr(r['52주 최고가'], r['시장']), axis=1)
+        df_format['52주 최저가'] = df_format.apply(lambda r: fmt_curr(r['52주 최저가'], r['시장']), axis=1)
         df_format['거래량 비율'] = df_format['거래량 비율'].map('{:.2f}배'.format)
 
         def fmt_display_marcap(val, market):
@@ -730,7 +730,7 @@ if st.session_state.screened_df is not None:
             else:
                 return f"{int(round(val)):,}"
 
-        df_format['시가총액'] = df_format.apply(lambda r: fmt_display_marcap(r['시가총액'], r['소속']), axis=1)
+        df_format['시가총액(억)'] = df_format.apply(lambda r: fmt_display_marcap(r['시가총액(억)'], r['시장']), axis=1)
 
         st.dataframe(df_format, use_container_width=True)
         
