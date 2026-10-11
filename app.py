@@ -71,11 +71,21 @@ STANDARD_CHART_THEME = {
     'hover_border': '#334155'
 }
 
-def fmt_curr(val, ticker):
-    if ticker.endswith('.KS') or ticker.endswith('.KQ'):
+def fmt_curr(val, ticker_or_market):
+    t_str = str(ticker_or_market).strip()
+    if t_str in ['KOSPI', 'KOSDAQ'] or t_str.endswith('.KS') or t_str.endswith('.KQ') or t_str.isdigit():
         return f"{val:,.0f}원"
     else:
         return f"${val:,.2f}"
+
+def clean_ticker_code(val):
+    s = str(val).strip()
+    if s.endswith('.KS') or s.endswith('.KQ'):
+        code = s[:-3]
+        return code.zfill(6) if code.isdigit() else code
+    if s.isdigit():
+        return s.zfill(6)
+    return s
 
 # 커스텀 CSS로 UI 스타일링 (다크 테마 최적화 및 시인성 개선)
 st.markdown("""
@@ -479,10 +489,25 @@ if start_screening:
 
         if df_screened is not None and not df_screened.empty:
             df_final = df_screened.copy()
-            # 출력용 한글 칼럼명 매핑
-            df_final_display = df_final.rename(columns={
-                'ticker': '티커',
+            # 소속 및 시가총액 안전 보강
+            if 'market' not in df_final.columns and '시장' in tickers_df.columns:
+                m_map = dict(zip(tickers_df['ticker'], tickers_df['시장']))
+                df_final['market'] = df_final['ticker'].map(m_map).fillna('KOSPI')
+            if 'marcap' not in df_final.columns and '시가총액_억원' in tickers_df.columns:
+                c_map = dict(zip(tickers_df['ticker'], tickers_df['시가총액_억원']))
+                df_final['marcap'] = df_final['ticker'].map(c_map).fillna(0)
+
+            # 원본 저장 (차트 시각화에서 원본 ticker를 그대로 사용)
+            st.session_state.raw_screened_df = df_final.copy()
+
+            # 코드/티커 6자리 정제 및 출력용 칼럼 매핑
+            df_final_display = df_final.copy()
+            df_final_display['코드/티커'] = df_final_display['ticker'].apply(clean_ticker_code)
+            
+            df_final_display = df_final_display.rename(columns={
                 'name': '종목명',
+                'market': '소속',
+                'marcap': '시가총액',
                 'price': '현재가',
                 'ma50': '50일 MA',
                 'ma150': '150일 MA',
@@ -492,11 +517,15 @@ if start_screening:
                 'vol_ratio': '거래량 비율',
                 'breakout_date': '돌파 감지일'
             })
-            # 불필요한 칼럼 제거
-            df_final_display = df_final_display.drop(columns=['trend_slope', 'trend_intercept'], errors='ignore')
+            
+            desired_cols = [
+                '코드/티커', '종목명', '소속', '시가총액',
+                '현재가', '50일 MA', '150일 MA', '200일 MA',
+                '52주 최고가', '52주 최저가', '거래량 비율', '돌파 감지일'
+            ]
+            df_final_display = df_final_display[[c for c in desired_cols if c in df_final_display.columns]].copy()
             
             st.session_state.screened_df = df_final_display
-            st.session_state.raw_screened_df = df_final # 원본 저장
         else:
             st.session_state.screened_df = pd.DataFrame()
             st.session_state.raw_screened_df = pd.DataFrame()
@@ -516,9 +545,11 @@ if st.session_state.screened_df is not None:
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             # 엑셀 내보내기용 별도 데이터프레임 가공 (raw_screened_df 기반)
             df_excel = st.session_state.raw_screened_df.copy()
+            df_excel['코드/티커'] = df_excel['ticker'].apply(clean_ticker_code)
             df_excel = df_excel.rename(columns={
-                'ticker': '티커',
                 'name': '종목명',
+                'market': '소속',
+                'marcap': '시가총액',
                 'price': '현재가',
                 'ma50': '50일 MA',
                 'ma150': '150일 MA',
@@ -529,28 +560,44 @@ if st.session_state.screened_df is not None:
                 'breakout_date': '돌파 감지일'
             })
             
+            excel_cols = [
+                '코드/티커', '종목명', '소속', '시가총액',
+                '현재가', '50일 MA', '150일 MA', '200일 MA',
+                '52주 최고가', '52주 최저가', '거래량 비율', '돌파 감지일'
+            ]
+            df_excel = df_excel[[c for c in excel_cols if c in df_excel.columns]].copy()
+            
             # 한국/미국 주식 구분에 따른 소수점 라운딩 및 형변환
             def format_excel_data(row):
-                ticker = row['티커']
-                is_kr = ticker.endswith('.KS') or ticker.endswith('.KQ')
+                mkt = str(row.get('소속', '')).strip()
+                code_str = str(row.get('코드/티커', '')).strip()
+                is_kr = mkt in ['KOSPI', 'KOSDAQ'] or code_str.isdigit()
+                
+                # 6자리 코드 처리
+                if is_kr and code_str.isdigit():
+                    row['코드/티커'] = code_str.zfill(6)
                 
                 # 가격 관련 필드들
                 price_cols = ['현재가', '50일 MA', '150일 MA', '200일 MA', '52주 최고가', '52주 최저가']
                 for col in price_cols:
-                    if is_kr:
-                        # 한국 주식은 소수점 반올림 후 정수로 변환
-                        row[col] = int(round(row[col]))
-                    else:
-                        # 미국 주식은 소수점 둘째 자리까지 반올림
-                        row[col] = round(row[col], 2)
-                        
+                    if col in row and pd.notna(row[col]):
+                        if is_kr:
+                            # 한국 주식은 소수점 반올림 후 정수로 변환
+                            row[col] = int(round(row[col]))
+                        else:
+                            # 미국 주식은 소수점 둘째 자리까지 반올림
+                            row[col] = round(row[col], 2)
+                            
+                # 시가총액 (한국 주식: 억원 단위 정수)
+                if '시가총액' in row and pd.notna(row['시가총액']):
+                    row['시가총액'] = int(round(row['시가총액']))
+                
                 # 거래량 비율은 공통 소수점 둘째 자리 반올림
-                row['거래량 비율'] = round(row['거래량 비율'], 2)
+                if '거래량 비율' in row and pd.notna(row['거래량 비율']):
+                    row['거래량 비율'] = round(row['거래량 비율'], 2)
                 return row
                 
             df_excel = df_excel.apply(format_excel_data, axis=1)
-            # 불필요한 분석용 내부 칼럼 제외
-            df_excel = df_excel.drop(columns=['trend_slope', 'trend_intercept'], errors='ignore')
             
             # 가공된 데이터프레임을 엑셀에 쓰기
             df_excel.to_excel(writer, index=False, sheet_name='Just Draw the Line')
@@ -577,25 +624,39 @@ if st.session_state.screened_df is not None:
                         max_len = length
                 worksheet.column_dimensions[col_letter].width = max(max_len + 4, 12)
                 
-            # 3. 특정 열 서식 및 정렬 설정 추가 (미국 주식 가격 필드 및 거래량 비율 '0.00' 서식 적용, J열 가운데 정렬)
+            # 3. 특정 열 서식 및 정렬 설정 추가
             from openpyxl.styles import Alignment
             for row_idx in range(2, max_row + 1):
-                # A열(티커 - 1번째 열)의 값 분석
-                ticker_val = str(worksheet.cell(row=row_idx, column=1).value or '')
-                is_kr = ticker_val.endswith('.KS') or ticker_val.endswith('.KQ')
+                # A열(1번째 열: 코드/티커)
+                cell_a = worksheet.cell(row=row_idx, column=1)
+                cell_a.number_format = '@' # 텍스트 형식 강제 적용 (000000 6자리 보존)
+                cell_a.alignment = Alignment(horizontal='center')
                 
-                # 미국 주식(달러화 자산)일 경우 가격 열(C~H열, 즉 3~8번째 열)에 소수점 2자리 '0.00' 서식 적용
-                if not is_kr:
-                    for col_idx in range(3, 9): # 3열(현재가) ~ 8열(52주 최저가)
-                        worksheet.cell(row=row_idx, column=col_idx).number_format = '0.00'
+                # C열(3번째 열: 소속)
+                cell_c = worksheet.cell(row=row_idx, column=3)
+                cell_c.alignment = Alignment(horizontal='center')
+                mkt_val = str(cell_c.value or '').strip()
+                is_kr = mkt_val in ['KOSPI', 'KOSDAQ'] or str(cell_a.value or '').isdigit()
                 
-                # I열 (거래량 비율 - 9번째 열) -> 공통 소수점 2자리 '0.00' 서식 적용
-                cell_i = worksheet.cell(row=row_idx, column=9)
-                cell_i.number_format = '0.00'
+                # D열(4번째 열: 시가총액)
+                cell_d = worksheet.cell(row=row_idx, column=4)
+                cell_d.number_format = '#,##0'
                 
-                # J열 (돌파 감지일 - 10번째 열) -> 가운데 정렬 적용
-                cell_j = worksheet.cell(row=row_idx, column=10)
-                cell_j.alignment = Alignment(horizontal='center')
+                # E~J열(5~10번째 열: 현재가 ~ 52주 최저가)
+                for col_idx in range(5, 11):
+                    cell_price = worksheet.cell(row=row_idx, column=col_idx)
+                    if is_kr:
+                        cell_price.number_format = '#,##0'
+                    else:
+                        cell_price.number_format = '#,##0.00'
+                
+                # K열 (11번째 열: 거래량 비율) -> 공통 소수점 2자리 '0.00' 서식 적용
+                cell_k = worksheet.cell(row=row_idx, column=11)
+                cell_k.number_format = '0.00'
+                
+                # L열 (12번째 열: 돌파 감지일) -> 가운데 정렬 적용
+                cell_l = worksheet.cell(row=row_idx, column=12)
+                cell_l.alignment = Alignment(horizontal='center')
                 
         excel_data = output.getvalue()
         
@@ -653,13 +714,23 @@ if st.session_state.screened_df is not None:
         # 소수점 포맷팅
         df_format = st.session_state.screened_df.copy()
         
-        df_format['현재가'] = df_format.apply(lambda r: fmt_curr(r['현재가'], r['티커']), axis=1)
-        df_format['50일 MA'] = df_format.apply(lambda r: fmt_curr(r['50일 MA'], r['티커']), axis=1)
-        df_format['150일 MA'] = df_format.apply(lambda r: fmt_curr(r['150일 MA'], r['티커']), axis=1)
-        df_format['200일 MA'] = df_format.apply(lambda r: fmt_curr(r['200일 MA'], r['티커']), axis=1)
-        df_format['52주 최고가'] = df_format.apply(lambda r: fmt_curr(r['52주 최고가'], r['티커']), axis=1)
-        df_format['52주 최저가'] = df_format.apply(lambda r: fmt_curr(r['52주 최저가'], r['티커']), axis=1)
+        df_format['현재가'] = df_format.apply(lambda r: fmt_curr(r['현재가'], r['소속']), axis=1)
+        df_format['50일 MA'] = df_format.apply(lambda r: fmt_curr(r['50일 MA'], r['소속']), axis=1)
+        df_format['150일 MA'] = df_format.apply(lambda r: fmt_curr(r['150일 MA'], r['소속']), axis=1)
+        df_format['200일 MA'] = df_format.apply(lambda r: fmt_curr(r['200일 MA'], r['소속']), axis=1)
+        df_format['52주 최고가'] = df_format.apply(lambda r: fmt_curr(r['52주 최고가'], r['소속']), axis=1)
+        df_format['52주 최저가'] = df_format.apply(lambda r: fmt_curr(r['52주 최저가'], r['소속']), axis=1)
         df_format['거래량 비율'] = df_format['거래량 비율'].map('{:.2f}배'.format)
+
+        def fmt_display_marcap(val, market):
+            if pd.isna(val) or val <= 0:
+                return "-"
+            if market in ['KOSPI', 'KOSDAQ'] or str(market).startswith('K'):
+                return f"{int(round(val)):,}억"
+            else:
+                return f"{int(round(val)):,}"
+
+        df_format['시가총액'] = df_format.apply(lambda r: fmt_display_marcap(r['시가총액'], r['소속']), axis=1)
 
         st.dataframe(df_format, use_container_width=True)
         

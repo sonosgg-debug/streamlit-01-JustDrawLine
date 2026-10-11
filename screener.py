@@ -46,7 +46,7 @@ def fit_upper_trendline(high_prices):
         return None, None, None
 
 
-def screen_single_stock(ticker, name, df, lookback_period=40, vol_ratio_thresh=1.5, apply_trend_template=True, breakout_window=2, **kwargs):
+def screen_single_stock(ticker, name, df, lookback_period=40, vol_ratio_thresh=1.5, apply_trend_template=True, breakout_window=2, market=None, marcap=0, **kwargs):
     """
     개별 주식 데이터프레임을 받아 데이비드 라이언 스크리닝 조건을 검증합니다.
     """
@@ -141,6 +141,8 @@ def screen_single_stock(ticker, name, df, lookback_period=40, vol_ratio_thresh=1
     return {
         'ticker': ticker,
         'name': name,
+        'market': market,
+        'marcap': marcap,
         'price': curr_price,
         'ma50': curr_ma50,
         'ma150': curr_ma150,
@@ -163,6 +165,8 @@ def _process_single_stock(
     apply_trend_template: bool,
     breakout_window: int,
     df_cached: pd.DataFrame = None,
+    market: str = None,
+    marcap: float = 0,
     **kwargs
 ):
     """
@@ -201,7 +205,9 @@ def _process_single_stock(
             lookback_period=lookback_period,
             vol_ratio_thresh=vol_ratio_thresh,
             apply_trend_template=apply_trend_template,
-            breakout_window=breakout_window
+            breakout_window=breakout_window,
+            market=market,
+            marcap=marcap
         )
     except Exception:
         return None
@@ -246,7 +252,9 @@ def run_screening_task(
                     lookback_period,
                     vol_ratio_thresh,
                     apply_trend_template,
-                    breakout_window
+                    breakout_window,
+                    market=row.get('시장', 'KOSPI'),
+                    marcap=row.get('시가총액_억원', 0)
                 ): (row['ticker'], row['회사명'])
                 for _, row in df_kr.iterrows()
             }
@@ -267,6 +275,8 @@ def run_screening_task(
     if not df_us.empty:
         us_tickers = df_us['ticker'].tolist()
         name_map = dict(zip(df_us['ticker'], df_us['회사명']))
+        market_map = dict(zip(df_us['ticker'], df_us['시장'])) if '시장' in df_us.columns else {}
+        marcap_map = dict(zip(df_us['ticker'], df_us['시가총액_억원'])) if '시가총액_억원' in df_us.columns else {}
         try:
             data = yf.download(us_tickers, period="2y", group_by="ticker", progress=False, timeout=20)
             us_stock_dfs = {}
@@ -300,7 +310,9 @@ def run_screening_task(
                         vol_ratio_thresh,
                         apply_trend_template,
                         breakout_window,
-                        us_stock_dfs[t]
+                        df_cached=us_stock_dfs[t],
+                        market=market_map.get(t, 'US'),
+                        marcap=marcap_map.get(t, 0)
                     ): (t, name_map[t])
                     for t in us_stock_dfs
                 }
@@ -323,6 +335,15 @@ def run_screening_task(
         return pd.DataFrame()
 
     df_res = pd.DataFrame(results)
+
+    # 누락 방어용 안전 매핑
+    if 'market' not in df_res.columns and '시장' in tickers_df.columns:
+        m_map = dict(zip(tickers_df['ticker'], tickers_df['시장']))
+        df_res['market'] = df_res['ticker'].map(m_map).fillna('KOSPI')
+    if 'marcap' not in df_res.columns and '시가총액_억원' in tickers_df.columns:
+        c_map = dict(zip(tickers_df['ticker'], tickers_df['시가총액_억원']))
+        df_res['marcap'] = df_res['ticker'].map(c_map).fillna(0)
+
     # 거래량 비율 기준 내림차순 정렬
     if 'vol_ratio' in df_res.columns:
         df_res = df_res.sort_values(by='vol_ratio', ascending=False).reset_index(drop=True)
